@@ -1,12 +1,35 @@
-(defpackage :bg/crawler
-  (:use :cl :dexador :plump :lquery :lparallel)
-  (:export crawl-page)
+(defpackage :bg/crawler-drone
+  (:use :cl)
+  (:export get-js-size connect)
   )
 ;; (ql:quickload '(:dexador :plump :lparallel :lquery))
 
-(in-package :bg/crawler)
+(in-package :bg/crawler-drone)
+
+(defvar *server*)
 
 (setf lparallel:*kernel* (lparallel:make-kernel 8))
+
+#|
+We've got a few different kinds of messages
+- Hello
+- Request site to crawl
+- Response with JS size
+
+to architect this, we need a main thread which will spawn off a
+thread pool to do the crawling
+|#
+
+(defun connect (ip port)
+  "Open a socket to given ip and port, and present yourself to the server"
+  (let ((socket (usocket:socket-connect ip port
+                                        :protocol :datagram
+                                        :element-type '(unsigned-byte 8))))
+    (unwind-protect
+         (progn
+           (format t "Sending data~%")
+           (usocket:socket-send socket "Hello!" 8))
+      (usocket:socket-close socket))))
 
 (defun get-js-size (url)
   (multiple-value-bind (html code #|headers uri stream|#) (dex:get url)

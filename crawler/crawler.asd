@@ -1,4 +1,5 @@
 (defsystem "bc/crawler"
-  :depends-on (#:dexador #:plump #:lquery #:lparallel)
-  :components ((:file "crawler")
-               ))
+  :depends-on (#:dexador #:plump #:lquery #:lparallel
+                         #:bordeaux-threads #:usocket)
+  :components ((:file "crawler-drone")
+               (:file "crawler-server")))

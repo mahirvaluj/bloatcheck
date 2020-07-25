@@ -1,12 +1,13 @@
-(defpackage :bg/crawler-drone
+(defpackage :bc/crawler-drone
   (:use :cl)
   (:export get-js-size connect)
   )
-;; (ql:quickload '(:dexador :plump :lparallel :lquery))
+;; (ql:quickload '(:dexador :plump :lparallel :lquery :bordeaux-threads))
 
-(in-package :bg/crawler-drone)
+(in-package :bc/crawler-drone)
 
 (defvar *server*)
+(defvar *server-socket*)
 
 (setf lparallel:*kernel* (lparallel:make-kernel 8))
 
@@ -22,13 +23,22 @@ thread pool to do the crawling
 
 (defun connect (ip port)
   "Open a socket to given ip and port, and present yourself to the server"
-  (let ((socket (usocket:socket-connect ip port
-                                        :protocol :datagram
-                                        :element-type '(unsigned-byte 8))))
-    (unwind-protect
-         (progn
-           (format t "Sending data~%")
-           (usocket:socket-send socket "Hello!" 8))
+  (let ((socket (usocket:socket-connect ip port :protocol :stream :element-type 'character)))
+    (setf *server-socket* socket)
+    (bordeaux-threads:make-thread #'(lambda () (connection-handler socket)) :name "server-talker")))
+
+(defun send-url-size (stream enc-url size)
+  (format stream "size\"~A\"~D~%" enc-url size)
+  (force-output stream))
+
+(defun request-new-url (stream)
+  (format stream "requ~%")
+  (force-output stream))
+
+(defun connection-handler (socket)
+  (let ((stream (usocket:socket-stream socket))
+        )
+    (unwind-protect (loop (sleep 1))
       (usocket:socket-close socket))))
 
 (defun get-js-size (url)

@@ -15,14 +15,14 @@
   (let ((socket (usocket:socket-listen host port
                                        :element-type 'character)))
     (setf *server-socket* socket)
-    (setf *server-thread* (bordeaux-threads:make-thread #'(lambda () (server-listener socket)) :name "server-thread"))))
+    (setf *server-thread* (bt:make-thread #'(lambda () (server-listener socket)) :name "server-thread"))))
 
 (defun server-listener (socket)
   "Listen on port for all incoming drone connections, and then spawn off a thread to deal with the drone"
   (unwind-protect
        (loop
           (let ((accepted-socket (usocket:socket-accept socket)))
-            (push (bordeaux-threads:make-thread
+            (push (bt:make-thread
                    #'(lambda () (drone-manage accepted-socket))
                    :name (format nil "drone-thread-~A" (incf *drone-count*)))
                   *drone-threads*)))
@@ -52,7 +52,7 @@
   (do-urlencode:urlencode "https://this-is-an-example.com"))
 
 (defun close-all-drone-connections ()
-  (mapc (lambda (drone-thread) (bordeaux-threads:destroy-thread drone-thread)) *drone-threads*)
+  (mapc (lambda (drone-thread) (bt:destroy-thread drone-thread)) *drone-threads*)
   (setf *drone-threads* nil)
   (setf *drone-count* 0))
 

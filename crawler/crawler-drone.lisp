@@ -2,13 +2,15 @@
   (:use :cl)
   (:export get-js-size connect)
   )
-;; (ql:quickload '(:dexador :plump :lparallel :lquery :bordeaux-threads))
+;; (ql:quickload '(:dexador :plump :lparallel :lquery :bordeaux-threads :bt-semaphore))
 
 (in-package :bc/crawler-drone)
 
 (defvar *server*)
 (defvar *server-socket*)
-
+(defvar *thread-number* 0)
+(defvar *thread-semaphore* (bt-sem:make-semaphore))
+(bt-sem:signal-semaphore *thread-semaphore* 10)
 (setf lparallel:*kernel* (lparallel:make-kernel 8))
 
 #|
@@ -36,10 +38,23 @@ thread pool to do the crawling
   (force-output stream))
 
 (defun connection-handler (socket)
-  (let ((stream (usocket:socket-stream socket))
-        )
-    (unwind-protect (loop (sleep 1))
+  (let ((stream (usocket:socket-stream socket)) url)
+    (unwind-protect
+         (loop
+            (bt-sem:wait-on-semaphore *thread-semaphore*)
+            (request-new-url stream)
+            (usocket:wait-for-input socket)
+            (setf url (read-line stream))
+            (bt:make-thread #'(lambda () (do-one-domain socket url)) :name (format nil "getter-thread-~D" (incf *thread-number*))))
       (usocket:socket-close socket))))
+
+(defun do-one-domain (socket url)
+  "Crawl a single domain to do the thing"
+  (unwind-protect
+       (let ((js-size (get-js-size url)))
+         "This is not actually what should happen -- I should be checking avg of a handful of pages"
+         (send-url-size (usocket:socket-stream socket) (do-urlencode:urlencode url) js-size))
+    (bt-sem:signal-semaphore *thread-semaphore*)))
 
 (defun get-js-size (url)
   (multiple-value-bind (html code #|headers uri stream|#) (dex:get url)

@@ -48,12 +48,12 @@ thread pool to do the crawling
             (bt:make-thread #'(lambda () (do-one-domain socket url)) :name (format nil "getter-thread-~D" (incf *thread-number*))))
       (usocket:socket-close socket))))
 
-(defun do-one-domain (socket url)
+(defun do-one-domain (socket enc-url)
   "Crawl a single domain to do the thing"
   (unwind-protect
-       (let ((js-size (get-js-size url)))
+       (let ((js-size (get-js-size (do-urlencode:urldecode enc-url))))
          "This is not actually what should happen -- I should be checking avg of a handful of pages"
-         (send-url-size (usocket:socket-stream socket) (do-urlencode:urlencode url) js-size))
+         (send-url-size (usocket:socket-stream socket) enc-url js-size))
     (bt-sem:signal-semaphore *thread-semaphore*)))
 
 (defun get-js-size (url)

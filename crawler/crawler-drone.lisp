@@ -43,7 +43,9 @@ thread pool to do the crawling
          (loop
             (bt-sem:wait-on-semaphore *thread-semaphore*)
             (request-new-url stream)
+            ;;(format *debug-io* "Waiting for input ~%")
             (usocket:wait-for-input socket)
+            ;;(format *debug-io* "Got input~%")
             (setf url (read-line stream))
             (bt:make-thread #'(lambda () (do-one-domain socket url)) :name (format nil "getter-thread-~D" (incf *thread-number*))))
       (usocket:socket-close socket))))
@@ -52,14 +54,18 @@ thread pool to do the crawling
   "Crawl a single domain to do the thing"
   (unwind-protect
        (let ((js-size (get-js-size (do-urlencode:urldecode enc-url))))
-         "This is not actually what should happen -- I should be checking avg of a handful of pages"
-         (send-url-size (usocket:socket-stream socket) enc-url js-size))
+         (when js-size
+           (send-url-size (usocket:socket-stream socket) enc-url js-size)))
     (bt-sem:signal-semaphore *thread-semaphore*)))
 
 (defun get-js-size (url)
-  (multiple-value-bind (html code #|headers uri stream|#) (dex:get url)
+ 
+  (multiple-value-bind (html code #|headers uri stream|#)
+      (handler-case (dex:get url) (dex:http-request-failed () nil) (usocket:ns-host-not-found-error () nil))
+    (when (null html)
+      (return-from get-js-size nil))
     (when (= code 200)
-      (let ((parsed-content (lquery:$ (initialize html))) js js-src-files)
+      (let ((parsed-content (lquery:$ (initialize html))) js js-src-iles)
         (loop for script across (lquery:$ parsed-content "script")
            do (progn
                 (push (plump:text (aref (plump:children script) 0)) js)
@@ -77,5 +83,3 @@ thread pool to do the crawling
           (loop for i in (remove-if #'null js)
              do (setf acc (+ acc (length i))))
           acc)))))
-
-

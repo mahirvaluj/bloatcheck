@@ -1,0 +1,72 @@
+* Thoughts
+  I'm writing some kind of distributed system, but I don't know what
+  communication between nodes looks like. 
+
+  Goals: 
+  - High resilience
+  - Low latency
+  - The data is mostly unchanging, but if we could update it that
+    would be better
+
+    
+* Protocol
+** General architecture
+   We'll have a TCP server being run some high port (let's call
+   it 6234) listening for incoming commands.
+   
+   There will be two kinds of nodes: commanders and drones. Commanders
+   will be able to be queried on who is storing what data, and who is
+   on the network.
+
+   Drones will have a single commander at a time. They'll have
+   heartbeats going to and from the commander at regular intervals.
+   
+   In the event that a commander goes offline/stops responding to
+   heartbeats, a drone will try and promote themselves to commander by
+   telling everyone they know that they want to promote themselves. 
+
+   A node receiving a new commander message will try and connect to
+   their current commander. If they also cannot connect to the
+   commander, then they will accept the new node as their commander.
+   
+   If more than 50% of the drones which were contacted agree that the
+   drone which tried to promote itself, then the new commander will
+   instate itself, and tell every other node it knows to tell everyone
+   they know that it is commander. If we have two drones that attempt
+   to do this at the same time, the commanders will circulate messages
+   regarding who has more drones, and the one with more drones
+   wins. If it's a tie, then they both fail, and reelection occurs
+   randomly after a period of backoff by the commanders in question.
+
+   To prevent bifurcation of the network, we'll need a third party (or
+   set of third parties) that will have to keep track of who the
+   current commanders are.
+   
+   The commander will have to store some kind of dictionary saying
+   which drones are responsible for each kind of data.
+
+   In the event of a drone failure, a commander must be notifed
+   (either by a client or other drone or by the commander sending some
+   command to it and it not responding), and a bunch of other nodes
+   will be contacted and told to take upon themselves the hashes that
+   that drone failed.
+   
+   In this case, this is a volatile store. I suppose we'll need a
+   third party with more reliability than speed to do the actual data
+   initialization of nodes, and that will be written to when drones
+   recieve put values.
+
+   In the case of a new node coming online, it'll have to ask the
+   commander what to do, and the commander will have to tell the node
+   what to look at.
+
+** Commands
+*** Hello
+    A client looking to either store some data or get some data will
+    send a hello to some node on a TCP socket to get information about
+    who the current commander is.
+
+* Keyval
+  Keyval is supposed to be an in-memory key-value store with only
+  moderate data retention guarantees, but with generally fast speed,
+  consensus, and high resilience to fault.

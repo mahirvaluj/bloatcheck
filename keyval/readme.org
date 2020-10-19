@@ -169,11 +169,18 @@
   I won't actually be rolling my own crypto though, that's a big no no
 
   So, to start out:
-  - I will write the code to allow myself to create packets and send complex data structures across the wire
-  - and then after that, I will have to design an authentication protocol for all the authentication
-  - and then after that, I will have to design the protocol and api between the drones/database/commander and figure out how to encrypt all of those inside my super-cool packet format
-  - and then after that, I will have to design how the drone works and how it stores its data and implement the transactional memory
-  - and then after that, I will have to design the user-facing API. AND THEN FINALLY, I'll have to actually get this all deployed somewhere and figure out if it all even works lol
+  - I will write the code to allow myself to create packets and send
+    complex data structures across the wire
+  - and then after that, I will have to design an authentication
+    protocol for all the authentication
+  - and then after that, I will have to design the protocol and api
+    between the drones/database/commander and figure out how to
+    encrypt all of those inside my super-cool packet format
+  - and then after that, I will have to design how the drone works and
+    how it stores its data and implement the transactional memory
+  - and then after that, I will have to design the user-facing
+    API. AND THEN FINALLY, I'll have to actually get this all deployed
+    somewhere and figure out if it all even works lol
   - oh I also have to write all the code for the authentication server
 
 

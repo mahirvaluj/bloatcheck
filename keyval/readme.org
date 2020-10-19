@@ -1,16 +1,203 @@
-* Thoughts
-  I'm writing some kind of distributed system, but I don't know what
-  communication between nodes looks like. 
+* New "spec" -- it's not rigorous but it's complete I think
+  I'm writing... a distributed transactional key-value database. A
+  key-value database is where you have a database in which you can do
+  one of three things
 
-  Goals: 
-  - High resilience
-  - Low latency
-  - The data is mostly unchanging, but if we could update it that
-    would be better
+  - you can: put (key, val) which ties key to val (it saves the
+    mapping key -> val in the database)
+  - you can: get (key) which returns a val that you put in beforehand
+  - you can: del (key) which removes the mapping key -> val
 
-    
+  Putting a key which was already put before overwrites a previous association
+
+  This is pretty simple.  It effectively gives you the use of
+  dictionaries, like a mapping between something to something else which
+  is nice and all, but what happens when you start scaling up?
+
+  Let's say you have 100GB of this data.
+
+  How are you going to store it if you really need near-instant access
+  to it?
+
+  If you were to store it on hard-disk and fetch it from one computer,
+  you'd be massively blocked, because the disk can only do one thing at
+  a time, so if you try to read many many keys or put simultaneously,
+  you run into issues
+
+  If you were to store it all in memory, you would run into another,
+  similar problem, where your issue becomes that most commodity hardware
+  does not have the capability to scale easily to that level of memory,
+  and that memory is less permanent.
+
+  Also, you very quickly realize that you can't store all this on one
+  computer so you're going to have to scale up the network.  So how do
+  you architect it in such a way as to have it scale horizontally
+  perfectly? That is what I am working on.
+
+  What have I come up with so far? (It's not fair to say come up with
+  completely freely, I am standing on the shoulders of the giants who
+  demonstrated to the world that these problems could be solved, and
+  gave the general idea behind the kinds of solutions you can build)
+  
+
+  because there are then a bunch of problems we need to solve
+
+  how do we make sure that the network 
+  - is available
+  - and consistent with itself
+  - and fast
+  - and secure
+
+  So, to try to solve this I've come up with a few things
+  in the design of this system, I'm making the assumption that the data we're dealing with is:
+  - very large in total
+  - very small granularly (i.e. you won't have a gigabyte key mapping to
+    a gigabyte buffer, it'll look something more like the number 1235213
+    mapping to the string "testing1234")
+  - much more frequently read than written
+  - not of CRITICAL importance
+  - needs to be responsive: read fast and written fast
+
+  (although I might have a bandaid available for the critical importance
+  part through like having drones shadow other drones, so there's
+  redundance there)
+
+
+  So what I've come up with is the following, and I'm quite proud of the
+  understanding that I'm starting to get of it all.  (btw, as an aside,
+  this is why I really think you need to reinvent the wheel for yourself
+  to do real learning)
+
+  There are four different kinds of nodes:
+  - drones
+    - drones are what you'll interract with to get and put data
+  - commanders
+    - commanders keep track of which drone keep track of which data
+  - database interfaces
+    - the database is where the data resides at rest.
+  - authentication provider
+    - the authentication provider authenticates the nodes to each other
+      so you know that you can trust a drone coming in which says that
+      they are a part of the network (prevents malicious spoofing of
+      data or alteration of data)
+
+
+
+  So this all rests upon the shoulders of the fact that when you have a
+  key, you can take hashes of the key and these hashes will allow us to
+  group certain keys together.
+
+  So, if you are a drone, and you want to be the one who deals with keys
+  whose hashes result in the number 5, then you can say to your
+  commander "hey, I want to be in charge of the number 5."  and then
+  your commander says okay, you can be in charge of number 5.  So then
+  you go to the database and you say "hey, commander says I can be in
+  charge of number 5" [the commander will pass a cryptographic ticket
+  that only the commander and the database know, which proves that the
+  allowance is genuine], and the database will give you all the keys and
+  values that it knows about whose keys hash to number 5.
+
+  so then when the commander from that point forwards gets a message
+  asking where number 5 key value pairs are stored, the commander will
+  know that it's the drone that it told to do number 5, so it can pass
+  the user of the key value database to the drone, and then your bro can
+  talk directly to the drone.
+
+  So, you might have noticed by now that the database is a single point
+  of failure. The individual drones can fail (the database should have
+  redundant copies of all the data), but the database cannot. This is
+  because databases are extremely robust and the database can also be
+  engineered in such a way as to be resilient to failure So the database
+  can be robust.
+
+  The authentication server is also a single point of failure, but we
+  can also make that one fault-tolerant by encapsulating it and then
+  within some encapsulation, add redundancy
+
+  Now, you may be asking, where does the commander come from?  This will
+  be done through an election of drones to commanders. The
+  authentication server knows who all the drones are, so what will
+  happen is that a drone that cannot reach a commander will say to all
+  the drones it's talked to before (or can ask for IPs from the
+  authentication server) "hey, elect me! I will be the next commander."
+  And if another drone gets a message that says this, they will try and
+  contact the commander. if they can access the commander, thjen they
+  discard it, because there's no need to reelect if the previous one is
+  still up.
+
+  If they cannot access the commander, then they will decide to vote for
+  the drone that sent them this message.
+
+  after a certain amount of time, an election is held. the
+  authentication server asks the drones who they are voting for, and the
+  drones respond, and if a large amount of them vote for a single drone,
+  then that drone gets elected, and it will then be granted by the
+  authentication server a ticket that allow database requests etc
+
+  The commander will keep track of which drones are storing which hashed
+  keys so one drone might be the keys which hash to 0-20, another 21-30,
+  etc and the commander will monitor the drones, send them heartbeat
+  messages to make sure they are up.
+
+  And if a drone goes down, the commander will ask another drone to take
+  up its duties (because they are divdied into these hashes, it can
+  actually ask many different drones to take the workload) and because
+  of everyone being authenticated through the server, we have proper
+  identity verification. If a user has access to the private key of our
+  developer to log onto the database we're dead anyways
+
+
+  Once a single drone gets a key hash slot, they will now be
+  authoritative on that slot's administration so transactions are easily
+  implemented. transactions are this really neat way of thinking about
+  memory where all the transformations on it are saved, and if they turn
+  out to be unsafe at the end, they are reverted, and if they were not
+  unsafe, then they are committed.
+
+  So if a single key gets written twice in a row, the database will
+  revert the changes, and try until it works properly.  it's really
+  cool.  And because the same key is dealt with by the same computer we
+  don't have to care about like "hey, did anyone else on the network
+  recieve a write request for this specific key?"  They just know it all
+  locally.
+
+  So, from the ground up, I will write a way to pass structured data
+  around, and then use this to write an encrypted protocol around.  I'll
+  be able to pass authenticated encrypted messages between nodes with
+  all of my own code from TCP up (which is harder than it sounds)
+
+  I won't actually be rolling my own crypto though, that's a big no no
+
+  So, to start out:
+  - I will write the code to allow myself to create packets and send complex data structures across the wire
+  - and then after that, I will have to design an authentication protocol for all the authentication
+  - and then after that, I will have to design the protocol and api between the drones/database/commander and figure out how to encrypt all of those inside my super-cool packet format
+  - and then after that, I will have to design how the drone works and how it stores its data and implement the transactional memory
+  - and then after that, I will have to design the user-facing API. AND THEN FINALLY, I'll have to actually get this all deployed somewhere and figure out if it all even works lol
+  - oh I also have to write all the code for the authentication server
+
+
+* From this point onwards, we have basically my brainstorming, none of this really makes too much sense:
 * Protocol
 ** General architecture
+   Transactional interactions with your data. This can be done because
+   a drone is considered the "owner" of data that it is passed.
+
+   This means that drones will need to authenticate to something, as
+   they could be malicious and data corrupting otherwise.
+
+   I think this should be done with a kerberos-like system. I don't
+   remember what linux systems use for this kind of thing. I mean they
+   might use kerberos too.
+   
+   With the kerberos, we can prove our authentication, and then can
+   build a socket connection between computers.
+   
+   This will then be transparent to the user. When contacting the
+   swarm for the first time, we'll have to do an authentication thing
+   with the kerb server that any node we attempt to contact will
+   direct us to if we are not authenticated. 
+
    We'll have a TCP server being run some high port (let's call
    it 6234) listening for incoming commands.
    
